@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Acesso restrito | Atomica Web Summit</title>
+    <style>
+      :root { color-scheme: dark; font-family: "Segoe UI", Arial, sans-serif; }
+      * { box-sizing: border-box; }
+      body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 28px; color: #1b1b1b; background: radial-gradient(ellipse at 50% 20%, #17494b 0, #202321 42%, #151515 100%); }
+      .gate { width: min(100%, 520px); padding: clamp(30px, 7vw, 58px); background: #f7eed7; border: 1px solid rgba(252, 202, 41, .65); border-radius: 22px; box-shadow: 0 24px 90px rgba(0, 0, 0, .38); }
+      .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 44px; font-size: 15px; font-weight: 800; letter-spacing: .22em; }
+      .mark { width: 34px; height: 34px; border: 2px solid #008c94; border-radius: 50%; display: grid; place-items: center; color: #008c94; font-size: 18px; }
+      .eyebrow { margin: 0 0 12px; color: #005f64; font-size: 12px; font-weight: 800; letter-spacing: .2em; text-transform: uppercase; }
+      h1 { margin: 0; font-size: clamp(31px, 6vw, 46px); line-height: 1.04; letter-spacing: -.04em; }
+      .copy { margin: 18px 0 30px; color: #50504c; font-size: 16px; line-height: 1.55; }
+      label { display: block; margin: 18px 0 8px; font-size: 13px; font-weight: 700; }
+      input { width: 100%; min-height: 48px; padding: 12px 14px; border: 1px solid #aaa18e; border-radius: 9px; background: #fffdf7; color: #1b1b1b; font: inherit; }
+      input:focus { outline: 3px solid rgba(0, 140, 148, .22); border-color: #008c94; }
+      button { width: 100%; min-height: 50px; margin-top: 26px; border: 0; border-radius: 9px; background: #005f64; color: white; font: inherit; font-weight: 750; cursor: pointer; }
+      button:hover:not(:disabled) { background: #004c50; }
+      button:disabled { opacity: .62; cursor: wait; }
+      #message { min-height: 22px; margin: 15px 0 0; color: #a51f32; font-size: 14px; }
+      #message:empty { display: none; }
+      .foot { margin: 32px 0 0; color: #777166; font-size: 12px; text-align: center; }
+      @media (prefers-reduced-motion: no-preference) { .gate { animation: arrive .45s ease-out both; } @keyframes arrive { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } } }
+    </style>
+  </head>
+  <body>
+    <main class="gate">
+      <div class="brand"><span class="mark" aria-hidden="true">A</span><span>ATOMICA</span></div>
+      <p class="eyebrow">Acesso restrito</p>
+      <h1>Web Summit<br />Startup Programme</h1>
+      <p class="copy">Insira as credenciais fornecidas pela Atomica para abrir a apresentação.</p>
+      <form id="access-form" novalidate>
+        <label for="username">Utilizador</label>
+        <input id="username" name="username" type="email" autocomplete="username" inputmode="email" required autofocus />
+        <label for="password">Senha</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required />
+        <p id="message" role="alert" aria-live="polite"></p>
+        <button id="submit" type="submit">Entrar</button>
+      </form>
+      <p class="foot">A apresentação é aberta apenas após validar a senha.</p>
+    </main>
+    <script>
+      const ALLOWED_USERNAME = "iarketing.oficial@gmail.com";
+      const form = document.querySelector("#access-form");
+      const usernameInput = document.querySelector("#username");
+      const passwordInput = document.querySelector("#password");
+      const submitButton = document.querySelector("#submit");
+      const message = document.querySelector("#message");
+      const decoder = new TextDecoder();
+      const SESSION_KEY = "atomica-web-summit-unlocked";
+
+      function fromBase64(value) {
+        const binary = atob(value);
+        return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+      }
+
+      async function decryptPresentation(password, payload) {
+        const material = await crypto.subtle.importKey(
+          "raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveKey"]
+        );
+        const key = await crypto.subtle.deriveKey(
+          { name: "PBKDF2", salt: fromBase64(payload.salt), iterations: payload.iterations, hash: "SHA-256" },
+          material,
+          { name: "AES-GCM", length: 256 },
+          false,
+          ["decrypt"]
+        );
+        const plaintext = await crypto.subtle.decrypt(
+          { name: "AES-GCM", iv: fromBase64(payload.iv) }, key, fromBase64(payload.data)
+        );
+        return decoder.decode(plaintext);
+      }
+
+      async function openPresentation(password) {
+        const response = await fetch(new URL("presentation.enc", document.baseURI), { cache: "no-store" });
+        if (!response.ok) throw new Error("load");
+        const payload = await response.json();
+        return decryptPresentation(password, payload);
+      }
+
+      function renderPresentation(html) {
+        const withBase = html.replace(/<head(\s[^>]*)?>/i, (head) => `${head}<base href="./">`);
+        document.open();
+        document.write(withBase);
+        document.close();
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        message.textContent = "";
+        const username = usernameInput.value.trim().toLowerCase();
+        const password = passwordInput.value;
+        if (username !== ALLOWED_USERNAME) {
+          message.textContent = "Credenciais inválidas. Verifique o utilizador e a senha.";
+          return;
+        }
+        if (!password) {
+          message.textContent = "Introduza a senha para continuar.";
+          return;
+        }
+        submitButton.disabled = true;
+        submitButton.textContent = "A validar…";
+        try {
+          const html = await openPresentation(password);
+          sessionStorage.setItem(SESSION_KEY, password);
+          renderPresentation(html);
+        } catch {
+          message.textContent = "Credenciais inválidas ou não foi possível carregar a apresentação.";
+          submitButton.disabled = false;
+          submitButton.textContent = "Entrar";
+          passwordInput.value = "";
+          passwordInput.focus();
+        }
+      });
+
+      const rememberedPassword = sessionStorage.getItem(SESSION_KEY);
+      if (rememberedPassword) {
+        submitButton.disabled = true;
+        submitButton.textContent = "A validar…";
+        openPresentation(rememberedPassword)
+          .then(renderPresentation)
+          .catch(() => {
+            sessionStorage.removeItem(SESSION_KEY);
+            submitButton.disabled = false;
+            submitButton.textContent = "Entrar";
+            passwordInput.focus();
+          });
+      }
+    </script>
+  </body>
+</html>
