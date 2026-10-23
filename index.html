@@ -36,7 +36,7 @@
       <p class="copy">Insira as credenciais fornecidas pela Atomica para abrir a apresentação.</p>
       <form id="access-form" novalidate>
         <label for="username">Utilizador</label>
-        <input id="username" name="username" type="email" autocomplete="username" inputmode="email" required autofocus />
+        <input id="username" name="username" type="text" autocomplete="username" autocapitalize="none" required autofocus />
         <label for="password">Senha</label>
         <input id="password" name="password" type="password" autocomplete="current-password" required />
         <p id="message" role="alert" aria-live="polite"></p>
@@ -45,7 +45,10 @@
       <p class="foot">A apresentação é aberta apenas após validar a senha.</p>
     </main>
     <script>
-      const ALLOWED_USERNAME = "iarketing.oficial@gmail.com";
+      const ACCESS = {
+        "iarketing.oficial@gmail.com": "presentation.enc",
+        "josesarmento": "presentation-josesarmento.enc",
+      };
       const form = document.querySelector("#access-form");
       const usernameInput = document.querySelector("#username");
       const passwordInput = document.querySelector("#password");
@@ -76,8 +79,8 @@
         return decoder.decode(plaintext);
       }
 
-      async function openPresentation(password) {
-        const response = await fetch(new URL("presentation.enc", document.baseURI), { cache: "no-store" });
+      async function openPresentation(password, file) {
+        const response = await fetch(new URL(file, document.baseURI), { cache: "no-store" });
         if (!response.ok) throw new Error("load");
         const payload = await response.json();
         return decryptPresentation(password, payload);
@@ -95,7 +98,8 @@
         message.textContent = "";
         const username = usernameInput.value.trim().toLowerCase();
         const password = passwordInput.value;
-        if (username !== ALLOWED_USERNAME) {
+        const file = Object.hasOwn(ACCESS, username) ? ACCESS[username] : null;
+        if (!file) {
           message.textContent = "Credenciais inválidas. Verifique o utilizador e a senha.";
           return;
         }
@@ -106,8 +110,8 @@
         submitButton.disabled = true;
         submitButton.textContent = "A validar…";
         try {
-          const html = await openPresentation(password);
-          sessionStorage.setItem(SESSION_KEY, password);
+          const html = await openPresentation(password, file);
+          sessionStorage.setItem(SESSION_KEY, JSON.stringify({ file, password }));
           renderPresentation(html);
         } catch {
           message.textContent = "Credenciais inválidas ou não foi possível carregar a apresentação.";
@@ -118,11 +122,18 @@
         }
       });
 
-      const rememberedPassword = sessionStorage.getItem(SESSION_KEY);
-      if (rememberedPassword) {
+      const remembered = (() => {
+        try {
+          const saved = JSON.parse(sessionStorage.getItem(SESSION_KEY) || "null");
+          return saved && Object.values(ACCESS).includes(saved.file) ? saved : null;
+        } catch {
+          return null;
+        }
+      })();
+      if (remembered) {
         submitButton.disabled = true;
         submitButton.textContent = "A validar…";
-        openPresentation(rememberedPassword)
+        openPresentation(remembered.password, remembered.file)
           .then(renderPresentation)
           .catch(() => {
             sessionStorage.removeItem(SESSION_KEY);
